@@ -10,7 +10,10 @@
 interface ExtCtx {
   rootPath: string
   registerHooks: (hooks: ChatHook[]) => void
+  notifyStatus: (text: string, opts?: { tone?: 'info' | 'success' | 'error' | 'warning'; durationMs?: number }) => void
 }
+
+let notifyStatus: ExtCtx['notifyStatus'] = () => {}
 
 type HookType = 'on_thought' | 'on_message' | 'on_tool_call'
 
@@ -110,6 +113,7 @@ function applyThinking(content: string): void {
   if (checklist.length === 0) {
     // First list seen — capture as canonical.
     checklist = parsed.map((i) => ({ ...i }))
+    notifyStatus(`Director: tracking ${checklist.length} task${checklist.length === 1 ? '' : 's'}`, { tone: 'info' })
     return
   }
 
@@ -156,6 +160,8 @@ const hooks: ChatHook[] = [
       const reminder = buildReminder()
       if (reminder) {
         injectedThisTurn = true
+        const remaining = checklist.filter((i) => !i.done).length
+        notifyStatus(`Director: nudging agent — ${remaining} task${remaining === 1 ? '' : 's'} left`, { tone: 'warning' })
         return { inject: reminder }
       }
     }
@@ -163,10 +169,12 @@ const hooks: ChatHook[] = [
 ]
 
 export function register(ctx: ExtCtx): () => void {
+  notifyStatus = ctx.notifyStatus ?? (() => {})
   ctx.registerHooks(hooks)
   return () => {
     checklist = []
     lastTurnId = null
     injectedThisTurn = false
+    notifyStatus = () => {}
   }
 }
