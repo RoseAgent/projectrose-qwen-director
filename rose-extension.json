@@ -1,0 +1,12 @@
+{
+  "id": "rose-qwen-director",
+  "name": "Qwen Director",
+  "version": "1.0.0",
+  "description": "Tracks checklists in agent thinking and reminds the agent to finish all tasks before responding to the user.",
+  "author": "ProjectRose",
+  "latin": "Rosa praeses",
+  "provides": {
+    "main": true,
+    "chatHooks": true
+  }
+}
