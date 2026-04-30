@@ -3,9 +3,10 @@
 // list, we capture it as a checklist. Subsequent thinking blocks update
 // completion status (checkbox marks, or words like "done"/"complete" on the
 // item line). When the agent tries to respond to the user with tasks still
-// pending, we inject a system message reminding it to finish. When the
-// user sends a new message we drop the in-memory state so the next turn
-// starts clean.
+// pending, we inject a system message reminding it to finish. State is
+// cleared explicitly when the host fires `on_user_message`, so a fresh user
+// message always starts with an empty checklist regardless of how the prior
+// turn ended.
 
 interface ExtCtx {
   rootPath: string
@@ -15,12 +16,13 @@ interface ExtCtx {
 
 let notifyStatus: ExtCtx['notifyStatus'] = () => {}
 
-type HookType = 'on_thought' | 'on_message' | 'on_tool_call'
+type HookType = 'on_thought' | 'on_message' | 'on_tool_call' | 'on_user_message'
 
 type HookEvent =
   | { type: 'on_thought'; content: string; turnId: string }
   | { type: 'on_message'; content: string; turnId: string }
   | { type: 'on_tool_call'; toolName: string; params: Record<string, unknown>; result: string; error: boolean; turnId: string }
+  | { type: 'on_user_message'; content: string }
 
 interface ChatHook {
   type: HookType
@@ -34,11 +36,6 @@ interface ChecklistItem {
 }
 
 let checklist: ChecklistItem[] = []
-let lastTurnId: string | null = null
-// True between an injection and the start of the next turn — used to tell a
-// fresh user message apart from an auto-injection iteration. Both produce a
-// new turnId on the host side; only the user-message case should reset.
-let injectedThisTurn = false
 
 function canonicalize(text: string): string {
   return text
@@ -91,21 +88,6 @@ function parseList(content: string): ChecklistItem[] {
   return items
 }
 
-// Called at the start of every hook fire. Returns true if a fresh user
-// message just arrived (state was cleared); false if this is the same turn
-// or an auto-injection continuation.
-function syncTurn(turnId: string): boolean {
-  if (turnId === lastTurnId) return false
-  const wasInjecting = injectedThisTurn
-  lastTurnId = turnId
-  injectedThisTurn = false
-  if (wasInjecting) return false
-  // Previous turn ended without us injecting — the agent finished freely
-  // and the next turnId is therefore a fresh user message.
-  checklist = []
-  return true
-}
-
 function applyThinking(content: string): void {
   const parsed = parseList(content)
   if (parsed.length === 0) return
@@ -145,10 +127,16 @@ function buildReminder(): string | null {
 
 const hooks: ChatHook[] = [
   {
+    type: 'on_user_message',
+    handler: () => {
+      // Fresh user message — drop any checklist carried over from a prior turn.
+      checklist = []
+    }
+  },
+  {
     type: 'on_thought',
     handler: (event) => {
       if (event.type !== 'on_thought') return
-      syncTurn(event.turnId)
       applyThinking(event.content)
     }
   },
@@ -156,10 +144,8 @@ const hooks: ChatHook[] = [
     type: 'on_message',
     handler: (event) => {
       if (event.type !== 'on_message') return
-      syncTurn(event.turnId)
       const reminder = buildReminder()
       if (reminder) {
-        injectedThisTurn = true
         const remaining = checklist.filter((i) => !i.done).length
         notifyStatus(`Director: nudging agent — ${remaining} task${remaining === 1 ? '' : 's'} left`, { tone: 'warning' })
         return { inject: reminder }
@@ -173,8 +159,6 @@ export function register(ctx: ExtCtx): () => void {
   ctx.registerHooks(hooks)
   return () => {
     checklist = []
-    lastTurnId = null
-    injectedThisTurn = false
     notifyStatus = () => {}
   }
 }
