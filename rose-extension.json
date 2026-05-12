@@ -7,6 +7,12 @@
   "latin": "Rosa praeses",
   "provides": {
     "main": true,
-    "chatHooks": true
+    "chatHooks": true,
+    "notifyStatus": true,
+    "hooks": [
+      { "type": "on_user_message" },
+      { "type": "on_thought" },
+      { "type": "on_message", "injectionPolicy": "first-wins" }
+    ]
   }
 }

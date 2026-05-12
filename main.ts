@@ -8,27 +8,16 @@
 // message always starts with an empty checklist regardless of how the prior
 // turn ended.
 
-interface ExtCtx {
-  rootPath: string
-  registerHooks: (hooks: ChatHook[]) => void
-  notifyStatus: (text: string, opts?: { tone?: 'info' | 'success' | 'error' | 'warning'; durationMs?: number }) => void
-}
+// First-party extensions in the monorepo type-only-import the host contract
+// via a relative path. The import is erased by esbuild, so the path only
+// needs to resolve at type-check time inside the worktree.
+import type {
+  ExtensionMainContext,
+  ChatHook,
+  HookEvent
+} from '../../ProjectRose/src/shared/extension-contract'
 
-let notifyStatus: ExtCtx['notifyStatus'] = () => {}
-
-type HookType = 'on_thought' | 'on_message' | 'on_tool_call' | 'on_user_message'
-
-type HookEvent =
-  | { type: 'on_thought'; content: string; turnId: string }
-  | { type: 'on_message'; content: string; turnId: string }
-  | { type: 'on_tool_call'; toolName: string; params: Record<string, unknown>; result: string; error: boolean; turnId: string }
-  | { type: 'on_user_message'; content: string }
-
-interface ChatHook {
-  type: HookType
-  handler: (event: HookEvent) => Promise<{ inject?: string } | void> | { inject?: string } | void
-  allowMultiple?: boolean
-}
+let notifyStatus: ExtensionMainContext['notifyStatus'] = () => {}
 
 interface ChecklistItem {
   text: string
@@ -135,14 +124,14 @@ const hooks: ChatHook[] = [
   },
   {
     type: 'on_thought',
-    handler: (event) => {
+    handler: (event: HookEvent) => {
       if (event.type !== 'on_thought') return
       applyThinking(event.content)
     }
   },
   {
     type: 'on_message',
-    handler: (event) => {
+    handler: (event: HookEvent) => {
       if (event.type !== 'on_message') return
       const reminder = buildReminder()
       if (reminder) {
@@ -154,7 +143,7 @@ const hooks: ChatHook[] = [
   }
 ]
 
-export function register(ctx: ExtCtx): () => void {
+export function register(ctx: ExtensionMainContext): () => void {
   notifyStatus = ctx.notifyStatus ?? (() => {})
   ctx.registerHooks(hooks)
   return () => {
